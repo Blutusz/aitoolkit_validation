@@ -394,6 +394,8 @@ class TrainConfig:
 class ModelConfig:
     def __init__(self, **kwargs):
         self.name_or_path: str = kwargs.get('name_or_path', None)
+        # name or path is updated on fine tuning. Keep a copy of the original
+        self.name_or_path_original: str = self.name_or_path
         self.is_v2: bool = kwargs.get('is_v2', False)
         self.is_xl: bool = kwargs.get('is_xl', False)
         self.is_pixart: bool = kwargs.get('is_pixart', False)
@@ -449,7 +451,13 @@ class ModelConfig:
         self.attn_masking = kwargs.get("attn_masking", False)
         if self.attn_masking and not self.is_flux:
             raise ValueError("attn_masking is only supported with flux models currently")
-        pass
+        # for targeting a specific layers
+        self.ignore_if_contains: Optional[List[str]] = kwargs.get("ignore_if_contains", None)
+        self.only_if_contains: Optional[List[str]] = kwargs.get("only_if_contains", None)
+        
+        if self.ignore_if_contains is not None or self.only_if_contains is not None:
+            if not self.is_flux:
+                raise ValueError("ignore_if_contains and only_if_contains are only supported with flux models currently")
 
 
 class EMAConfig:

@@ -24,6 +24,7 @@ from torchvision.transforms import Resize, transforms
 from toolkit.assistant_lora import load_assistant_lora_from_path
 from toolkit.clip_vision_adapter import ClipVisionAdapter
 from toolkit.custom_adapter import CustomAdapter
+from toolkit.dequantize import patch_dequantization_on_save
 from toolkit.ip_adapter import IPAdapter
 from library.model_util import convert_unet_state_dict_to_sd, convert_text_encoder_state_dict_to_sd_v2, \
     convert_vae_state_dict, load_vae
@@ -526,7 +527,8 @@ class StableDiffusion:
 
         elif self.model_config.is_flux:
             print("Loading Flux model")
-            base_model_path = "black-forest-labs/FLUX.1-schnell"
+            # base_model_path = "black-forest-labs/FLUX.1-schnell"
+            base_model_path = self.model_config.name_or_path_original
             print("Loading transformer")
             subfolder = 'transformer'
             transformer_path = model_path
@@ -660,8 +662,10 @@ class StableDiffusion:
                     # unfortunately, not an easier way with peft
                     pipe.unload_lora_weights()
             flush()
-
+            
             if self.model_config.quantize:
+                # patch the state dict method
+                patch_dequantization_on_save(transformer)
                 quantization_type = qfloat8
                 print("Quantizing transformer")
                 quantize(transformer, weights=quantization_type)
@@ -685,11 +689,12 @@ class StableDiffusion:
             text_encoder_2.to(self.device_torch, dtype=dtype)
             flush()
 
-            print("Quantizing T5")
-            quantize(text_encoder_2, weights=qfloat8)
-            freeze(text_encoder_2)
-            flush()
-
+            if self.model_config.quantize:
+                print("Quantizing T5")
+                quantize(text_encoder_2, weights=qfloat8)
+                freeze(text_encoder_2)
+                flush()
+                
             print("Loading clip")
             text_encoder = CLIPTextModel.from_pretrained(base_model_path, subfolder="text_encoder", torch_dtype=dtype)
             tokenizer = CLIPTokenizer.from_pretrained(base_model_path, subfolder="tokenizer", torch_dtype=dtype)
@@ -1404,6 +1409,7 @@ class StableDiffusion:
 
                     gen_config.save_image(img, i)
                     gen_config.log_image(img, i)
+                    flush()
 
                 if self.adapter is not None and isinstance(self.adapter, ReferenceAdapter):
                     self.adapter.clear_memory()
@@ -2300,38 +2306,22 @@ class StableDiffusion:
                     named_params[name] = param
         if unet:
             if self.is_flux:
-                # Just train the middle 2 blocks of each transformer block
-                # block_list = []
-                # num_transformer_blocks = 2
-                # start_block = len(self.unet.transformer_blocks) // 2 - (num_transformer_blocks // 2)
-                # for i in range(num_transformer_blocks):
-                #     block_list.append(self.unet.transformer_blocks[start_block + i])
-                #
-                # num_single_transformer_blocks = 4
-                # start_block = len(self.unet.single_transformer_blocks) // 2 - (num_single_transformer_blocks // 2)
-                # for i in range(num_single_transformer_blocks):
-                #     block_list.append(self.unet.single_transformer_blocks[start_block + i])
-                #
-                # for block in block_list:
-                #     for name, param in block.named_parameters(recurse=True, prefix=f"{SD_PREFIX_UNET}"):
-                #         named_params[name] = param
-
-                # train the guidance embedding
-                # if self.unet.config.guidance_embeds:
-                #     transformer: FluxTransformer2DModel = self.unet
-                #     for name, param in transformer.time_text_embed.named_parameters(recurse=True,
-                #                                                                     prefix=f"{SD_PREFIX_UNET}"):
-                #         named_params[name] = param
-
-                for name, param in self.unet.transformer_blocks.named_parameters(recurse=True,
-                                                                                 prefix=f"{SD_PREFIX_UNET}"):
-                    named_params[name] = param
-                for name, param in self.unet.single_transformer_blocks.named_parameters(recurse=True,
-                                                                                        prefix=f"{SD_PREFIX_UNET}"):
+                for name, param in self.unet.named_parameters(recurse=True, prefix="transformer"):
                     named_params[name] = param
             else:
                 for name, param in self.unet.named_parameters(recurse=True, prefix=f"{SD_PREFIX_UNET}"):
                     named_params[name] = param
+            
+            if self.model_config.ignore_if_contains is not None:
+                # remove params that contain the ignore_if_contains from named params
+                for key in list(named_params.keys()):
+                    if any([s in key for s in self.model_config.ignore_if_contains]):
+                        del named_params[key]
+            if self.model_config.only_if_contains is not None:
+                # remove params that do not contain the only_if_contains from named params
+                for key in list(named_params.keys()):
+                    if not any([s in key for s in self.model_config.only_if_contains]):
+                        del named_params[key]
 
         if refiner:
             for name, param in self.refiner_unet.named_parameters(recurse=True, prefix=f"{SD_PREFIX_REFINER_UNET}"):
@@ -2420,12 +2410,6 @@ class StableDiffusion:
         # saving in diffusers format
         if not output_file.endswith('.safetensors'):
             # diffusers
-            # if self.is_pixart:
-            #     self.unet.save_pretrained(
-            #         save_directory=output_file,
-            #         safe_serialization=True,
-            #     )
-            # else:
             if self.is_flux:
                 # only save the unet
                 transformer: FluxTransformer2DModel = self.unet
