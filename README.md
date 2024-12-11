@@ -29,6 +29,8 @@ Requirements:
 
 Linux:
 ```bash
+[AutoDL]source /etc/network_turbo
+[星鸾云]openNet open
 git clone https://github.com/NBSTpeterhill/ai-toolkit.git
 cd ai-toolkit
 git submodule update --init --recursive
