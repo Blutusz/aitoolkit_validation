@@ -29,7 +29,7 @@ Requirements:
 
 Linux:
 ```bash
-git clone https://github.com/ostris/ai-toolkit.git
+git clone https://github.com/NBSTpeterhill/ai-toolkit.git
 cd ai-toolkit
 git submodule update --init --recursive
 python3 -m venv venv
