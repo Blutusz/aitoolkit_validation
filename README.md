@@ -44,7 +44,7 @@ pip3 install -r requirements.txt
 
 Windows:
 ```bash
-git clone https://github.com/ostris/ai-toolkit.git
+git clone https://github.com/NBSTpeterhill/ai-toolkit.git
 cd ai-toolkit
 git submodule update --init --recursive
 python -m venv venv
