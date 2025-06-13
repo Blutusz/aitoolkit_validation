@@ -266,11 +266,11 @@ class Flex2(BaseModel):
         with torch.no_grad():
             bs, c, h, w = latent_model_input.shape
 
-            embed_in = max(self.unet.x_embedder.in_features - 1, 1)
-            patch = int(math.sqrt(embed_in / c))
+            embed_in = self.unet.x_embedder.in_features
+            if embed_in % c == 1:
+                embed_in -= 1
+            patch = int(math.sqrt(max(embed_in // c, 1)))
             patch = max(patch, 1)
-            while patch > 1 and (h % patch != 0 or w % patch != 0):
-                patch -= 1
             ph = patch
             pw = patch
 
