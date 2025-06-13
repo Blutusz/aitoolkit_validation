@@ -11,6 +11,9 @@ from diffusers.pipelines.flux.pipeline_output import FluxPipelineOutput
 from diffusers.pipelines.flux.pipeline_flux import calculate_shift, retrieve_timesteps, XLA_AVAILABLE
 
 
+import math
+
+
 class Flex2Pipeline(FluxControlPipeline):
     def __init__(
         self,
@@ -230,6 +233,7 @@ class Flex2Pipeline(FluxControlPipeline):
                     num_control_channels,
                     height_control_image,
                     width_control_image,
+                    self.transformer.config.in_channels,
                 )
 
         latents, latent_image_ids = self.prepare_latents(
@@ -332,7 +336,13 @@ class Flex2Pipeline(FluxControlPipeline):
         if output_type == "latent":
             image = latents
         else:
-            latents = self._unpack_latents(latents, height, width, self.vae_scale_factor)
+            latents = self._unpack_latents(
+                latents,
+                height,
+                width,
+                self.vae_scale_factor,
+                self.transformer.config.in_channels,
+            )
             latents = (latents / self.vae.config.scaling_factor) + self.vae.config.shift_factor
             image = self.vae.decode(latents, return_dict=False)[0]
             image = self.image_processor.postprocess(image, output_type=output_type)
@@ -344,5 +354,40 @@ class Flex2Pipeline(FluxControlPipeline):
             return (image,)
 
         return FluxPipelineOutput(images=image)
+
+    @staticmethod
+    def _calc_patch_size(height: int, width: int, patch_count: int) -> int:
+        """Calculate patch size so that number of patches matches patch_count."""
+        patch_area = (height * width) // patch_count
+        patch_size = int(math.sqrt(patch_area))
+        patch_size = max(patch_size, 1)
+        return patch_size
+
+    @staticmethod
+    def _pack_latents(latents, batch_size, num_channels_latents, height, width, patch_count=None):
+        if patch_count is None:
+            patch = 2
+        else:
+            patch = Flex2Pipeline._calc_patch_size(height, width, patch_count)
+        latents = latents.view(batch_size, num_channels_latents, height // patch, patch, width // patch, patch)
+        latents = latents.permute(0, 2, 4, 1, 3, 5)
+        latents = latents.reshape(batch_size, (height // patch) * (width // patch), num_channels_latents * patch * patch)
+        return latents
+
+    @staticmethod
+    def _unpack_latents(latents, height, width, vae_scale_factor, patch_count=None):
+        batch_size, num_patches, channels = latents.shape
+        height = int(height)
+        width = int(width)
+        if patch_count is None:
+            patch = 2
+        else:
+            patch = Flex2Pipeline._calc_patch_size(height, width, patch_count)
+        height = patch * (height // (vae_scale_factor * patch))
+        width = patch * (width // (vae_scale_factor * patch))
+        latents = latents.view(batch_size, height // patch, width // patch, channels // (patch * patch), patch, patch)
+        latents = latents.permute(0, 3, 1, 4, 2, 5)
+        latents = latents.reshape(batch_size, channels // (patch * patch), height, width)
+        return latents
 
     
