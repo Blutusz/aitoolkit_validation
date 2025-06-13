@@ -119,6 +119,11 @@ class SDTrainer(BaseSDTrainProcess):
         pass
 
     def before_dataset_load(self):
+        try:
+            from toolkit.subpixel_patch import apply_flex2_patch
+            apply_flex2_patch(self.sd)
+        except Exception:
+            pass
         self.assistant_adapter = None
         # get adapter assistant if one is set
         if self.train_config.adapter_assist_name_or_path is not None:
