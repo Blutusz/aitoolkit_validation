@@ -264,16 +264,27 @@ class Flex2(BaseModel):
     ):
         with torch.no_grad():
             bs, c, h, w = latent_model_input.shape
+
+            ph = 2
+            pw = 2
+
+            pad_h = (ph - h % ph) % ph
+            pad_w = (pw - w % pw) % pw
+            if pad_h != 0 or pad_w != 0:
+                latent_model_input = F.pad(latent_model_input, (0, pad_w, 0, pad_h))
+                h += pad_h
+                w += pad_w
+
             latent_model_input_packed = rearrange(
                 latent_model_input,
                 "b c (h ph) (w pw) -> b (h w) (c ph pw)",
-                ph=2,
-                pw=2
+                ph=ph,
+                pw=pw
             )
 
-            img_ids = torch.zeros(h // 2, w // 2, 3)
-            img_ids[..., 1] = img_ids[..., 1] + torch.arange(h // 2)[:, None]
-            img_ids[..., 2] = img_ids[..., 2] + torch.arange(w // 2)[None, :]
+            img_ids = torch.zeros(h // ph, w // pw, 3)
+            img_ids[..., 1] = img_ids[..., 1] + torch.arange(h // ph)[:, None]
+            img_ids[..., 2] = img_ids[..., 2] + torch.arange(w // pw)[None, :]
             img_ids = repeat(img_ids, "h w c -> b (h w) c",
                              b=bs).to(self.device_torch)
 
@@ -323,10 +334,10 @@ class Flex2(BaseModel):
         noise_pred = rearrange(
             noise_pred,
             "b (h w) (c ph pw) -> b c (h ph) (w pw)",
-            h=latent_model_input.shape[2] // 2,
-            w=latent_model_input.shape[3] // 2,
-            ph=2,
-            pw=2,
+            h=h // ph,
+            w=w // pw,
+            ph=ph,
+            pw=pw,
             c=self.vae.config.latent_channels
         )
 
