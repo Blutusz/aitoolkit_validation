@@ -21,6 +21,7 @@ from toolkit.util.quantize import quantize, get_qtype
 from transformers import T5TokenizerFast, T5EncoderModel, CLIPTextModel, CLIPTokenizer
 from .pipeline import Flex2Pipeline
 from einops import rearrange, repeat
+import math
 import random
 import torch.nn.functional as F
 
@@ -265,8 +266,12 @@ class Flex2(BaseModel):
         with torch.no_grad():
             bs, c, h, w = latent_model_input.shape
 
-            ph = 2
-            pw = 2
+            patch = int(math.sqrt(self.unet.x_embedder.in_features / c))
+            patch = max(patch, 1)
+            while patch > 1 and (h % patch != 0 or w % patch != 0):
+                patch -= 1
+            ph = patch
+            pw = patch
 
             pad_h = (ph - h % ph) % ph
             pad_w = (pw - w % pw) % pw
