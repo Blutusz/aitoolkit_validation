@@ -265,8 +265,11 @@ class Flex2(BaseModel):
     ):
         with torch.no_grad():
             bs, c, h, w = latent_model_input.shape
-            patch = int(math.sqrt((h * w) / self.unet_unwrapped.config.in_channels))
-            patch = max(patch, 1)
+            patch = Flex2Pipeline._calc_patch_size(
+                h, w, self.unet_unwrapped.config.in_channels
+            )
+            while patch > 1 and (h % patch != 0 or w % patch != 0):
+                patch -= 1
             latent_model_input_packed = rearrange(
                 latent_model_input,
                 "b c (h ph) (w pw) -> b (h w) (c ph pw)",
