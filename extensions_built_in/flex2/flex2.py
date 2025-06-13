@@ -21,6 +21,7 @@ from toolkit.util.quantize import quantize, get_qtype
 from transformers import T5TokenizerFast, T5EncoderModel, CLIPTextModel, CLIPTokenizer
 from .pipeline import Flex2Pipeline
 from einops import rearrange, repeat
+import math
 import random
 import torch.nn.functional as F
 
@@ -264,16 +265,18 @@ class Flex2(BaseModel):
     ):
         with torch.no_grad():
             bs, c, h, w = latent_model_input.shape
+            patch = int(math.sqrt((h * w) / self.unet_unwrapped.config.in_channels))
+            patch = max(patch, 1)
             latent_model_input_packed = rearrange(
                 latent_model_input,
                 "b c (h ph) (w pw) -> b (h w) (c ph pw)",
-                ph=2,
-                pw=2
+                ph=patch,
+                pw=patch
             )
 
-            img_ids = torch.zeros(h // 2, w // 2, 3)
-            img_ids[..., 1] = img_ids[..., 1] + torch.arange(h // 2)[:, None]
-            img_ids[..., 2] = img_ids[..., 2] + torch.arange(w // 2)[None, :]
+            img_ids = torch.zeros(h // patch, w // patch, 3)
+            img_ids[..., 1] = img_ids[..., 1] + torch.arange(h // patch)[:, None]
+            img_ids[..., 2] = img_ids[..., 2] + torch.arange(w // patch)[None, :]
             img_ids = repeat(img_ids, "h w c -> b (h w) c",
                              b=bs).to(self.device_torch)
 
@@ -323,11 +326,11 @@ class Flex2(BaseModel):
         noise_pred = rearrange(
             noise_pred,
             "b (h w) (c ph pw) -> b c (h ph) (w pw)",
-            h=latent_model_input.shape[2] // 2,
-            w=latent_model_input.shape[3] // 2,
-            ph=2,
-            pw=2,
-            c=self.vae.config.latent_channels
+            h=latent_model_input.shape[2] // patch,
+            w=latent_model_input.shape[3] // patch,
+            ph=patch,
+            pw=patch,
+            c=self.vae.config.latent_channels,
         )
 
         if bypass_guidance_embedding:
