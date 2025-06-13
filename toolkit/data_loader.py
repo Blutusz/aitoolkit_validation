@@ -726,6 +726,12 @@ def get_dataloader_from_datasets(
 
     def dto_collation(batch: List["FileItemDTO"]):
         # create DTO batch
+        # dataloader may wrap a list of FileItemDTO objects in an additional
+        # list when using bucketed datasets with batch_size=None. Detect and
+        # unwrap this case so DataLoaderBatchDTO receives the expected list of
+        # FileItemDTO objects.
+        if len(batch) == 1 and isinstance(batch[0], list):
+            batch = batch[0]
         batch = DataLoaderBatchDTO(file_items=batch)
         return batch
 
