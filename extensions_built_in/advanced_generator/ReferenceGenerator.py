@@ -10,7 +10,12 @@ from torch.utils.data import DataLoader
 from diffusers import StableDiffusionXLAdapterPipeline, StableDiffusionAdapterPipeline
 from tqdm import tqdm
 
-from toolkit.config_modules import ModelConfig, GenerateImageConfig, preprocess_dataset_raw_config, DatasetConfig
+from toolkit.config_modules import (
+    ModelConfig,
+    GenerateImageConfig,
+    preprocess_dataset_raw_config,
+    DatasetConfig,
+)
 from toolkit.data_transfer_object.data_loader import FileItemDTO, DataLoaderBatchDTO
 from toolkit.sampler import get_sampler
 from toolkit.stable_diffusion_model import StableDiffusion
@@ -32,20 +37,20 @@ class GenerateConfig:
 
     def __init__(self, **kwargs):
         self.prompts: List[str]
-        self.sampler = kwargs.get('sampler', 'ddpm')
-        self.neg = kwargs.get('neg', '')
-        self.seed = kwargs.get('seed', -1)
-        self.walk_seed = kwargs.get('walk_seed', False)
-        self.t2i_adapter_path = kwargs.get('t2i_adapter_path', None)
-        self.guidance_scale = kwargs.get('guidance_scale', 7)
-        self.sample_steps = kwargs.get('sample_steps', 20)
-        self.prompt_2 = kwargs.get('prompt_2', None)
-        self.neg_2 = kwargs.get('neg_2', None)
-        self.prompts = kwargs.get('prompts', None)
-        self.guidance_rescale = kwargs.get('guidance_rescale', 0.0)
-        self.ext = kwargs.get('ext', 'png')
-        self.adapter_conditioning_scale = kwargs.get('adapter_conditioning_scale', 1.0)
-        if kwargs.get('shuffle', False):
+        self.sampler = kwargs.get("sampler", "ddpm")
+        self.neg = kwargs.get("neg", "")
+        self.seed = kwargs.get("seed", -1)
+        self.walk_seed = kwargs.get("walk_seed", False)
+        self.t2i_adapter_path = kwargs.get("t2i_adapter_path", None)
+        self.guidance_scale = kwargs.get("guidance_scale", 7)
+        self.sample_steps = kwargs.get("sample_steps", 20)
+        self.prompt_2 = kwargs.get("prompt_2", None)
+        self.neg_2 = kwargs.get("neg_2", None)
+        self.prompts = kwargs.get("prompts", None)
+        self.guidance_rescale = kwargs.get("guidance_rescale", 0.0)
+        self.ext = kwargs.get("ext", "png")
+        self.adapter_conditioning_scale = kwargs.get("adapter_conditioning_scale", 1.0)
+        if kwargs.get("shuffle", False):
             # shuffle the prompts
             random.shuffle(self.prompts)
 
@@ -54,17 +59,19 @@ class ReferenceGenerator(BaseExtensionProcess):
 
     def __init__(self, process_id: int, job, config: OrderedDict):
         super().__init__(process_id, job, config)
-        self.output_folder = self.get_conf('output_folder', required=True)
-        self.device = self.get_conf('device', 'cuda')
-        self.model_config = ModelConfig(**self.get_conf('model', required=True))
-        self.generate_config = GenerateConfig(**self.get_conf('generate', required=True))
+        self.output_folder = self.get_conf("output_folder", required=True)
+        self.device = self.get_conf("device", "cuda")
+        self.model_config = ModelConfig(**self.get_conf("model", required=True))
+        self.generate_config = GenerateConfig(
+            **self.get_conf("generate", required=True)
+        )
         self.is_latents_cached = True
-        raw_datasets = self.get_conf('datasets', None)
+        raw_datasets = self.get_conf("datasets", None)
         if raw_datasets is not None and len(raw_datasets) > 0:
             raw_datasets = preprocess_dataset_raw_config(raw_datasets)
         self.datasets = None
         self.datasets_reg = None
-        self.dtype = self.get_conf('dtype', 'float16')
+        self.dtype = self.get_conf("dtype", "float16")
         self.torch_dtype = get_torch_dtype(self.dtype)
         self.params = []
         if raw_datasets is not None and len(raw_datasets) > 0:
@@ -102,11 +109,13 @@ class ReferenceGenerator(BaseExtensionProcess):
             self.adapter = T2IAdapter.from_pretrained(
                 self.generate_config.t2i_adapter_path,
                 torch_dtype=self.torch_dtype,
-                varient="fp16"
+                varient="fp16",
             ).to(device)
 
         midas_depth = MidasDetector.from_pretrained(
-            "valhalla/t2iadapter-aux-models", filename="dpt_large_384.pt", model_type="dpt_large"
+            "valhalla/t2iadapter-aux-models",
+            filename="dpt_large_384.pt",
+            model_type="dpt_large",
         ).to(device)
 
         if self.model_config.is_xl:
@@ -137,7 +146,8 @@ class ReferenceGenerator(BaseExtensionProcess):
         pipe.unet = torch.compile(pipe.unet, mode="reduce-overhead", fullgraph=True)
         # midas_depth = torch.compile(midas_depth, mode="reduce-overhead", fullgraph=True)
 
-        self.data_loader = get_dataloader_from_datasets(self.datasets, 1, self.sd)
+        loaders = get_dataloader_from_datasets(self.datasets, 1, self.sd)
+        self.data_loader = loaders[0]
 
         num_batches = len(self.data_loader)
         pbar = tqdm(total=num_batches, desc="Generating images")
@@ -151,8 +161,12 @@ class ReferenceGenerator(BaseExtensionProcess):
             img_filename = os.path.basename(img_path)
             img_filename_no_ext = os.path.splitext(img_filename)[0]
             output_path = os.path.join(self.output_folder, img_filename)
-            output_caption_path = os.path.join(self.output_folder, img_filename_no_ext + '.txt')
-            output_depth_path = os.path.join(self.output_folder, img_filename_no_ext + '.depth.png')
+            output_caption_path = os.path.join(
+                self.output_folder, img_filename_no_ext + ".txt"
+            )
+            output_depth_path = os.path.join(
+                self.output_folder, img_filename_no_ext + ".depth.png"
+            )
 
             caption = batch.get_caption_list()[0]
 
@@ -179,9 +193,7 @@ class ReferenceGenerator(BaseExtensionProcess):
 
             # generate depth map
             image = midas_depth(
-                image,
-                detect_resolution=min_res,  # do 512 ?
-                image_resolution=min_res
+                image, detect_resolution=min_res, image_resolution=min_res  # do 512 ?
             )
 
             # image.save(output_depth_path)
@@ -198,7 +210,7 @@ class ReferenceGenerator(BaseExtensionProcess):
             gen_images.save(output_path)
 
             # save caption
-            with open(output_caption_path, 'w') as f:
+            with open(output_caption_path, "w") as f:
                 f.write(caption)
 
             pbar.update(1)
