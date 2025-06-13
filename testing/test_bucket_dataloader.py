@@ -15,17 +15,20 @@ import torchvision.transforms.functional
 from toolkit.image_utils import save_tensors, show_img, show_tensors
 
 from toolkit.data_transfer_object.data_loader import DataLoaderBatchDTO
-from toolkit.data_loader import AiToolkitDataset, get_dataloader_from_datasets, \
-    trigger_dataloader_setup_epoch
+from toolkit.data_loader import (
+    AiToolkitDataset,
+    get_dataloader_from_datasets,
+    trigger_dataloader_setup_epoch,
+)
 from toolkit.config_modules import DatasetConfig
 import argparse
 from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
-parser.add_argument('dataset_folder', type=str, default='input')
-parser.add_argument('--epochs', type=int, default=1)
-parser.add_argument('--num_frames', type=int, default=1)
-parser.add_argument('--output_path', type=str, default=None)
+parser.add_argument("dataset_folder", type=str, default="input")
+parser.add_argument("--epochs", type=int, default=1)
+parser.add_argument("--num_frames", type=int, default=1)
+parser.add_argument("--output_path", type=str, default=None)
 
 
 args = parser.parse_args()
@@ -41,6 +44,7 @@ batch_size = 1
 
 clip_processor = CLIPImageProcessor.from_pretrained("openai/clip-vit-base-patch16")
 
+
 class FakeAdapter:
     def __init__(self):
         self.clip_image_processor = clip_processor
@@ -52,15 +56,13 @@ class FakeSD:
         self.adapter = FakeAdapter()
 
 
-
-
 dataset_config = DatasetConfig(
     dataset_path=dataset_folder,
     # clip_image_path=dataset_folder,
     # square_crop=True,
     resolution=resolution,
     # caption_ext='json',
-    default_caption='default',
+    default_caption="default",
     # clip_image_path='/mnt/Datasets2/regs/yetibear_xl_v14/random_aspect/',
     buckets=True,
     bucket_tolerance=bucket_tolerance,
@@ -78,7 +80,9 @@ dataset_config = DatasetConfig(
     # ]
 )
 
-dataloader: DataLoader = get_dataloader_from_datasets([dataset_config], batch_size=batch_size, sd=FakeSD())
+dataloader = get_dataloader_from_datasets(
+    [dataset_config], batch_size=batch_size, sd=FakeSD()
+)[0]
 
 
 # run through an epoch ang check sizes
@@ -86,7 +90,7 @@ dataloader_iterator = iter(dataloader)
 idx = 0
 for epoch in range(args.epochs):
     for batch in tqdm(dataloader):
-        batch: 'DataLoaderBatchDTO'
+        batch: "DataLoaderBatchDTO"
         img_batch = batch.tensor
         frames = 1
         if len(img_batch.shape) == 5:
@@ -120,7 +124,7 @@ for epoch in range(args.epochs):
         big_img = img_batch
         # big_img = big_img.clamp(-1, 1)
         if args.output_path is not None:
-            save_tensors(big_img, os.path.join(args.output_path, f'{idx}.png'))
+            save_tensors(big_img, os.path.join(args.output_path, f"{idx}.png"))
         else:
             show_tensors(big_img)
 
@@ -137,4 +141,4 @@ for epoch in range(args.epochs):
 
 cv2.destroyAllWindows()
 
-print('done')
+print("done")

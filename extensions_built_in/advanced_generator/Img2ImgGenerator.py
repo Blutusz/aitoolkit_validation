@@ -12,7 +12,12 @@ from torch.utils.data import DataLoader
 from diffusers import StableDiffusionXLImg2ImgPipeline, PixArtSigmaPipeline
 from tqdm import tqdm
 
-from toolkit.config_modules import ModelConfig, GenerateImageConfig, preprocess_dataset_raw_config, DatasetConfig
+from toolkit.config_modules import (
+    ModelConfig,
+    GenerateImageConfig,
+    preprocess_dataset_raw_config,
+    DatasetConfig,
+)
 from toolkit.data_transfer_object.data_loader import FileItemDTO, DataLoaderBatchDTO
 from toolkit.sampler import get_sampler
 from toolkit.stable_diffusion_model import StableDiffusion
@@ -31,41 +36,40 @@ def flush():
     gc.collect()
 
 
-
-
-
 class GenerateConfig:
 
     def __init__(self, **kwargs):
         self.prompts: List[str]
-        self.sampler = kwargs.get('sampler', 'ddpm')
-        self.neg = kwargs.get('neg', '')
-        self.seed = kwargs.get('seed', -1)
-        self.walk_seed = kwargs.get('walk_seed', False)
-        self.guidance_scale = kwargs.get('guidance_scale', 7)
-        self.sample_steps = kwargs.get('sample_steps', 20)
-        self.guidance_rescale = kwargs.get('guidance_rescale', 0.0)
-        self.ext = kwargs.get('ext', 'png')
-        self.denoise_strength = kwargs.get('denoise_strength', 0.5)
-        self.trigger_word = kwargs.get('trigger_word', None)
+        self.sampler = kwargs.get("sampler", "ddpm")
+        self.neg = kwargs.get("neg", "")
+        self.seed = kwargs.get("seed", -1)
+        self.walk_seed = kwargs.get("walk_seed", False)
+        self.guidance_scale = kwargs.get("guidance_scale", 7)
+        self.sample_steps = kwargs.get("sample_steps", 20)
+        self.guidance_rescale = kwargs.get("guidance_rescale", 0.0)
+        self.ext = kwargs.get("ext", "png")
+        self.denoise_strength = kwargs.get("denoise_strength", 0.5)
+        self.trigger_word = kwargs.get("trigger_word", None)
 
 
 class Img2ImgGenerator(BaseExtensionProcess):
 
     def __init__(self, process_id: int, job, config: OrderedDict):
         super().__init__(process_id, job, config)
-        self.output_folder = self.get_conf('output_folder', required=True)
-        self.copy_inputs_to = self.get_conf('copy_inputs_to', None)
-        self.device = self.get_conf('device', 'cuda')
-        self.model_config = ModelConfig(**self.get_conf('model', required=True))
-        self.generate_config = GenerateConfig(**self.get_conf('generate', required=True))
+        self.output_folder = self.get_conf("output_folder", required=True)
+        self.copy_inputs_to = self.get_conf("copy_inputs_to", None)
+        self.device = self.get_conf("device", "cuda")
+        self.model_config = ModelConfig(**self.get_conf("model", required=True))
+        self.generate_config = GenerateConfig(
+            **self.get_conf("generate", required=True)
+        )
         self.is_latents_cached = True
-        raw_datasets = self.get_conf('datasets', None)
+        raw_datasets = self.get_conf("datasets", None)
         if raw_datasets is not None and len(raw_datasets) > 0:
             raw_datasets = preprocess_dataset_raw_config(raw_datasets)
         self.datasets = None
         self.datasets_reg = None
-        self.dtype = self.get_conf('dtype', 'float16')
+        self.dtype = self.get_conf("dtype", "float16")
         self.torch_dtype = get_torch_dtype(self.dtype)
         self.params = []
         if raw_datasets is not None and len(raw_datasets) > 0:
@@ -128,7 +132,8 @@ class Img2ImgGenerator(BaseExtensionProcess):
             # pipe.unet = torch.compile(pipe.unet, mode="reduce-overhead", fullgraph=True)
             # midas_depth = torch.compile(midas_depth, mode="reduce-overhead", fullgraph=True)
 
-            self.data_loader = get_dataloader_from_datasets(self.datasets, 1, self.sd)
+            loaders = get_dataloader_from_datasets(self.datasets, 1, self.sd)
+            self.data_loader = loaders[0]
 
             num_batches = len(self.data_loader)
             pbar = tqdm(total=num_batches, desc="Generating images")
@@ -137,27 +142,33 @@ class Img2ImgGenerator(BaseExtensionProcess):
             for i, batch in enumerate(self.data_loader):
                 batch: DataLoaderBatchDTO = batch
 
-                gen_seed = seed if seed > 0 else random.randint(0, 2 ** 32 - 1)
+                gen_seed = seed if seed > 0 else random.randint(0, 2**32 - 1)
                 generator = torch.manual_seed(gen_seed)
 
                 file_item: FileItemDTO = batch.file_items[0]
                 img_path = file_item.path
                 img_filename = os.path.basename(img_path)
                 img_filename_no_ext = os.path.splitext(img_filename)[0]
-                img_filename = img_filename_no_ext + '.' + self.generate_config.ext
+                img_filename = img_filename_no_ext + "." + self.generate_config.ext
                 output_path = os.path.join(self.output_folder, img_filename)
-                output_caption_path = os.path.join(self.output_folder, img_filename_no_ext + '.txt')
+                output_caption_path = os.path.join(
+                    self.output_folder, img_filename_no_ext + ".txt"
+                )
 
                 if self.copy_inputs_to is not None:
                     output_inputs_path = os.path.join(self.copy_inputs_to, img_filename)
-                    output_inputs_caption_path = os.path.join(self.copy_inputs_to, img_filename_no_ext + '.txt')
+                    output_inputs_caption_path = os.path.join(
+                        self.copy_inputs_to, img_filename_no_ext + ".txt"
+                    )
                 else:
                     output_inputs_path = None
                     output_inputs_caption_path = None
 
                 caption = batch.get_caption_list()[0]
                 if self.generate_config.trigger_word is not None:
-                    caption = caption.replace('[trigger]', self.generate_config.trigger_word)
+                    caption = caption.replace(
+                        "[trigger]", self.generate_config.trigger_word
+                    )
 
                 img: torch.Tensor = batch.tensor.clone()
                 image = self.to_pil(img)
@@ -168,13 +179,18 @@ class Img2ImgGenerator(BaseExtensionProcess):
 
                     # Encode the full image once
                     encoded_image = pipe.vae.encode(
-                        pipe.image_processor.preprocess(image).to(device=pipe.device, dtype=pipe.dtype))
+                        pipe.image_processor.preprocess(image).to(
+                            device=pipe.device, dtype=pipe.dtype
+                        )
+                    )
                     if hasattr(encoded_image, "latent_dist"):
                         latents = encoded_image.latent_dist.sample(generator)
                     elif hasattr(encoded_image, "latents"):
                         latents = encoded_image.latents
                     else:
-                        raise AttributeError("Could not access latents of provided encoder_output")
+                        raise AttributeError(
+                            "Could not access latents of provided encoder_output"
+                        )
                     latents = pipe.vae.config.scaling_factor * latents
 
                     # latents = self.sd.encode_images(img)
@@ -190,15 +206,23 @@ class Img2ImgGenerator(BaseExtensionProcess):
                     batch_size = 1
                     num_images_per_prompt = 1
 
-                    shape = (batch_size, pipe.transformer.config.in_channels, image.height // pipe.vae_scale_factor,
-                             image.width // pipe.vae_scale_factor)
-                    noise = randn_tensor(shape, generator=generator, device=pipe.device, dtype=pipe.dtype)
+                    shape = (
+                        batch_size,
+                        pipe.transformer.config.in_channels,
+                        image.height // pipe.vae_scale_factor,
+                        image.width // pipe.vae_scale_factor,
+                    )
+                    noise = randn_tensor(
+                        shape, generator=generator, device=pipe.device, dtype=pipe.dtype
+                    )
 
                     # noise = torch.randn_like(latents, device=device, dtype=self.torch_dtype)
                     num_inference_steps = self.generate_config.sample_steps
                     strength = self.generate_config.denoise_strength
                     # Get timesteps
-                    init_timestep = min(int(num_inference_steps * strength), num_inference_steps)
+                    init_timestep = min(
+                        int(num_inference_steps * strength), num_inference_steps
+                    )
                     t_start = max(num_inference_steps - init_timestep, 0)
                     pipe.scheduler.set_timesteps(num_inference_steps, device="cpu")
                     timesteps = pipe.scheduler.timesteps[t_start:]
@@ -217,7 +241,7 @@ class Img2ImgGenerator(BaseExtensionProcess):
                         guidance_scale=self.generate_config.guidance_scale,
                         # strength=self.generate_config.denoise_strength,
                         use_resolution_binning=False,
-                        output_type="np"
+                        output_type="np",
                     ).images[0]
                     gen_images = (gen_images * 255).clip(0, 255).astype(np.uint8)
                     gen_images = Image.fromarray(gen_images)
@@ -236,13 +260,13 @@ class Img2ImgGenerator(BaseExtensionProcess):
                 gen_images.save(output_path)
 
                 # save caption
-                with open(output_caption_path, 'w') as f:
+                with open(output_caption_path, "w") as f:
                     f.write(caption)
 
                 if output_inputs_path is not None:
                     os.makedirs(os.path.dirname(output_inputs_path), exist_ok=True)
                     image.save(output_inputs_path)
-                    with open(output_inputs_caption_path, 'w') as f:
+                    with open(output_inputs_caption_path, "w") as f:
                         f.write(caption)
 
                 pbar.update(1)
